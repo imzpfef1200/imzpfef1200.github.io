@@ -1,0 +1,159 @@
+---
+title: "Final Project"
+author: "Ian Pfeffer"
+date: "May 21, 2019"
+output: html_document
+---
+
+## Background
+"The 27 Club" is an unofficial nomenclature for a group of popular celebrities whom all died at the age of 27.  Notable "members" include Jim Morrison of The Doors fame and Jimi Hendrix.
+
+In the past 20 years, there have been no entrants into the 27 club.  Therefore, for the purpose of this projects, we will consider anyone who died at an age within the 5 year range of 25-30 years old.
+
+## Problem Statement
+Is being inducted into the 27 club a statistically significant event? How many entrants would one expect per year going forward? Given the way they died, could you predict if they would be an entrant
+
+## Input Data Set
+https://www.kaggle.com/hugodarwood/celebrity-deaths
+It is a collection of celebrity deaths from Wikipedia over the 10-year interval of 2006-2016.
+  -Sample Size=21458
+  -Blank cause of death is considered NA or "unknown"
+  -
+  
+    
+```{r, include=TRUE}
+library(tidyverse) # loading code goes here 
+ 
+setwd("C:/Users/Ian Pfeffer/Documents/CMSC320/Data") 
+ 
+celeb_deaths <- read.csv("celebrity_deaths.csv")[c("age","birth_year","cause_of_death","death_year","name")] %>%
+  mutate(cause_of_death = na_if(cause_of_death, ""))
+ 
+celeb_deaths %>% 
+  slice(1:10)
+```
+  
+| Name | Type | Description |
+|------|------|-------------|
+| Age | Discrete Numerical | Age which celebrity died |
+| birth_year | Discrete Numerical | Year celebrity was born |
+| cause_of_death | Unordered Categorical | String identifying cause of death of celebrity |
+| death_year | Discrete Numerical | Year celebrity died |
+| name | Unordered Categorical | String identifying name of celebrity |
+  
+## Distribution of ages
+
+```{r age analysis, include=TRUE}
+library(dplyr)
+library(tidyr)
+celeb_deaths %>%
+  group_by(age) %>%
+  summarize(num = n()) %>%
+  ggplot(mapping = aes(x=age, y=num)) +
+    geom_bar(stat = "identity")
+```
+
+The graph centers around 80 years old, which is expected considering the average age of death in the modern world sits around the same.  There is a bit of a left-leaning skew, meaning the possibilities of younger deaths does not decrease as drastically the further away from the center we get, which is not necessarily good news for the exclusitivity of the 27 club.
+
+_Is there a statistically significant difference between celebrity deaths in that age group and normal ages of death distributions of the US population?_
+
+According to the CDC, in the year 2007, about 42,500 people out of about 2,423,700 people died in the raneg we are interested in.
+
+This data comes from: https://www.cdc.gov/nchs/data/dvs/MortFinal2007_Worktable23f.pdf
+
+We will use this proportion as the True proportion of deaths for this range, and we will call this $p_0$.  It's variance will be $\frac{p_0 * (1-p_0)}{n}$, where $n$ is the 2,423,700 people who died.
+```{r hypoTest setup, include=TRUE}
+n <- 2423712
+p_0 <- 42572/n
+var_p_0 <- 1/n * p_0 * (1-p_0)
+```
+
+We want to use this as our baseline in order to test whether our celebrity data shows anything suspicious.
+Our alternative hypothesis is the number of deaths in our range divided by the total amount of deaths.
+```{r hypoTest alternative,include=TRUE}
+p_A <- nrow(filter(filter(celeb_deaths, age >=25), age <= 30))/nrow(celeb_deaths)
+```
+
+This proportion is approximately .01095 or 1% of all celebrity deaths from 2006 to 2016.  We will say that this is statistically significant if the probability that we get this proportion given $p_0$ is a correct estimate is less than .05 or 5%.  Otherwise, we cannot say anything about whether this "exclusive" club is actually that exclusive.
+
+```{r hypoTest, include=TRUE}
+pnorm(p_A, mean = p_0, sd = sqrt(var_p_0))
+```
+
+By all means this is statistically significant.  According to this hypothesis test, there is by no means that a proportion of people who died in this range could be considered normal.  Therefore, it is not without reason to suggest the infamous 27 club is special.
+
+## Does Cause of Death have a Correlation with Age
+
+Now we will explore if the cause of death has any correlation with the age of death, and therefore would you possibly predict whether a person is given entry to the 27 club based on how they died.
+
+_Graphing cause of death vs age_
+
+Because of the wide array of deaths noted in the "cause_of_death" column, We will break down the possible attributes into 9 categories: Cancer, some sort of complication, heart problems, stroke, suicide, accident, natural cause, and other.  These are 9 major categories in this column, and we determine whether an entry falls in that category simply by its cause of death containing that word in it.
+
+```{r cause analysis, include=TRUE}
+cause_adjuster <- function(celeb_deaths){
+  sapply(celeb_deaths$cause_of_death, function(cause_of_death){
+    if (is.na(cause_of_death)){
+     'unknown'
+    } else if (grepl("cancer",cause_of_death,ignore.case = TRUE)){
+     'cancer'
+    } else if (grepl("complication",cause_of_death,ignore.case = TRUE)){
+      'complication'
+    } else if (grepl("complication", cause_of_death, ignore.case= TRUE)){
+      'heart'
+    } else if (grepl("stroke", cause_of_death, ignore.case = TRUE)){
+      'stroke'
+    } else if (grepl("suicide", cause_of_death, ignore.case = TRUE)){
+      'suicide'
+    } else if (grepl("crash", cause_of_death, ignore.case = TRUE) || grepl("accident",cause_of_death, ignore.case = TRUE)){
+      'accident'
+    } else if (grepl("natural", cause_of_death, ignore.case = TRUE)){
+      'natural cause'
+    } else{
+      'other'
+    }
+})
+  }
+
+
+celeb_deaths %>%
+  mutate(cause_of_death = cause_adjuster(celeb_deaths)) %>%
+  ggplot(mapping = aes(x=cause_of_death,y=age)) +
+  geom_boxplot() +
+  ggtitle("Cause of death vs distribution of ages")
+
+```
+
+As we can see with this boxplot, the causes of deaths that generally have younger casualties seem to be accidents (meaning vehicular), suicide, and complications.  Others have a decent amount, although the median still stands failry higher.  It has a large skew to the younger end, though.  The same is true for unknown causes. Most of the other causes may have a few cases that are closer to our 25-30 year-old range, but their medians are much higher  (near 80 or so).
+
+_Can you discover a linear regression model based on this?_
+
+Now we raise the question, is there some sort of linear correlation between the cause of death and the age at which that person dies?  We do this by breaking each cause of death into a discrete numerical: "Did they die of $x$?" This gives us 9 new variables to attempt to predict age of death with.
+
+```{r lm, include=TRUE}
+death_lm <- lm(age~cause_of_death, data = celeb_deaths %>%
+  mutate(cause_of_death = cause_adjuster(celeb_deaths)))
+broom::tidy(death_lm)
+```
+
+Setting "Accident" to be our relative standard to compare the others against, it would appear that the only one that even gets us close to 27 would be death by suicide.  Maybe adding a constraint of death_year would provide us with a more clear model.
+
+```{r lm2,include=TRUE}
+death_lm2 <- lm(age~death_year+cause_of_death, data = celeb_deaths %>%
+  mutate(cause_of_death = cause_adjuster(celeb_deaths)))
+broom::tidy(death_lm2)
+```
+
+While most causes of death still point upward, these model do tell us a few things.  1) From the first model, we see that, since the intercept is around 50 years old, and all causes of death have positive values, there is a decent chance that if if a person dies from anything besides a suicide or an accident, its a safe bet they were over 50 years old and have no chance of joining the 27 club.  We also learn that, each year, the average age of celebrity deaths decreases by about .14, meaning that if two people both died from the same cause, but one a year after the other, the later one would probably have been about .14 years younger.  Also, the cause of death correlation is relatively unchanged when year is taken into account.
+
+In truth, this mostly just reveals that it would be hard to say whether a person would be inducted into the 27 club based on just their cause of death.  However, it would be much easier to say if a person would not be inducted based on their cause of death.  For example, the likelihood of someone dying of a stroke or a natural cause and still being an honorary member of the 27 club is quite low, since those two have the highest values and therefore they were probably an older person if that was their cause of death.
+
+## Conclusion
+
+_Is the 27 Club really an anomoly?_
+
+According to statistics by the CDC and information on the deaths of celebrities, there does seem to be some statistically significant amount of celebrities who die in the range of 25-30 years old.
+
+_Is there some way to predict entrants based on the way they died?_
+
+In all honesty, no, not really.  However, there are ways to tell who is likely not an entrant, and who is more likely an entrant than others.  More specifically, those who die in accidents or suicides are much more likely to be entrants than those dying of natural causes, strokes, or some sort of medical complication.
